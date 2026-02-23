@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/apollosoftwarexyz/mon/animations"
+	"github.com/apollosoftwarexyz/mon/formatting"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -180,7 +181,7 @@ func (m *model) renderTask(t Task, allTasks []Task, spinner string) string {
 		s.WriteRune(' ')
 	}
 
-	s.WriteString(fmt.Sprintf("| %s", formatDuration(t.GetElapsed())))
+	s.WriteString(fmt.Sprintf("| %s", formatting.Duration(t.GetElapsed())))
 	s.WriteString(" ")
 
 	if t.IsError() {
@@ -197,7 +198,7 @@ func (m *model) renderTask(t Task, allTasks []Task, spinner string) string {
 	estimatedCompletion, hasEstimatedCompletion := t.GetEstimatedCompletion()
 	if hasEstimatedCompletion {
 		s.WriteString("| ")
-		s.WriteString(fmt.Sprintf("eta: %5s |", formatDuration(estimatedCompletion)))
+		s.WriteString(fmt.Sprintf("eta: %5s |", formatting.Duration(estimatedCompletion)))
 	}
 
 	if !t.IsCompleted() {
@@ -213,34 +214,5 @@ func (m *model) renderTask(t Task, allTasks []Task, spinner string) string {
 	}
 
 	s.WriteRune('\n')
-	return s.String()
-}
-
-func formatDuration(d time.Duration) string {
-	var s strings.Builder
-
-	if hours := time.Duration(d.Hours()); hours > 0 {
-		s.WriteString(fmt.Sprintf("%02d:", hours))
-	}
-
-	if minutes := time.Duration(d.Minutes()); minutes > 0 {
-		minutesFmt := "%d:"
-		if d.Minutes() >= 60 {
-			minutesFmt = "%02d:"
-		}
-
-		s.WriteString(fmt.Sprintf(minutesFmt, minutes%60))
-	}
-
-	if seconds := time.Duration(d.Seconds()); seconds >= 10 {
-		s.WriteString(fmt.Sprintf("%02d", seconds%60))
-	} else {
-		s.WriteString(fmt.Sprintf("% d", seconds%60))
-	}
-
-	if d.Seconds() < 60 {
-		s.WriteString(fmt.Sprintf(".%01ds", (time.Duration(d.Milliseconds())%1000)/100))
-	}
-
 	return s.String()
 }

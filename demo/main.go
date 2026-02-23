@@ -29,7 +29,6 @@ func main() {
 	indeterminateTask(&wg, m, 200*time.Millisecond)
 	errorTask(&wg, m, 5*time.Second)
 
-	fakeCopyBytes(&wg, m, 20000)
 	fakeCopyBytes(&wg, m, 5000)
 	fakeCopyBytes(&wg, m, 2000)
 	fakeCopyBytes(&wg, m, 2000)
@@ -40,7 +39,6 @@ func main() {
 
 	time.Sleep(3 * time.Second)
 	fakeCopyBytes(&wg, m, 2000)
-	fakeCopyBytes(&wg, m, 15000)
 
 	time.Sleep(5 * time.Second)
 	fakeCopyBytes(&wg, m, 2000)
