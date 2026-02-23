@@ -3,6 +3,8 @@ package mon
 import (
 	"sync/atomic"
 	"time"
+
+	"github.com/apollosoftwarexyz/mon/formatting"
 )
 
 // TaskBuilder for adding new [Task] references to a monitor ([M]).
@@ -15,6 +17,9 @@ type TaskBuilder interface {
 
 	// Category sets the category of the task.
 	Category(category string) TaskBuilder
+
+	// Unit renderer for step progress.
+	Unit(unit formatting.Unit) TaskBuilder
 
 	// TotalSteps sets the total number of steps that must be completed as part
 	// of this task. If this is not set, then [Task.IsIndeterminate] is true.
@@ -32,6 +37,7 @@ type taskBuilder struct {
 	name       string
 	caption    string
 	category   string
+	unit       formatting.Unit
 	totalSteps uint64
 }
 
@@ -50,6 +56,11 @@ func (b *taskBuilder) Category(category string) TaskBuilder {
 	return b
 }
 
+func (b *taskBuilder) Unit(unit formatting.Unit) TaskBuilder {
+	b.unit = unit
+	return b
+}
+
 func (b *taskBuilder) TotalSteps(totalSteps uint64) TaskBuilder {
 	b.totalSteps = totalSteps
 	return b
@@ -59,11 +70,16 @@ func (b *taskBuilder) Apply() Task {
 	stepsTotal := &atomic.Uint64{}
 	stepsTotal.Store(b.totalSteps)
 
+	if b.unit == nil {
+		b.unit = &formatting.StepsUnit{}
+	}
+
 	task := &task{
 		notify:         b.m.notify,
 		name:           b.name,
 		caption:        b.caption,
 		category:       b.category,
+		unit:           b.unit,
 		startTime:      time.Now(),
 		stepsCompleted: &atomic.Uint64{},
 		stepsTotal:     stepsTotal,
@@ -77,11 +93,39 @@ type Task interface {
 	// GetName of the task.
 	GetName() string
 
+	// SetName of the task.
+	SetName(name string)
+
 	// GetCaption of the task.
 	GetCaption() string
 
+	// SetCaption of the task.
+	SetCaption(caption string)
+
 	// GetCategory of the task.
 	GetCategory() string
+
+	// SetCategory of the task.
+	SetCategory(category string)
+
+	// GetUnit of the task. This is used to render progress based on steps.
+	GetUnit() formatting.Unit
+
+	// IsError returns true if Error has been called with a non-nil error.
+	IsError() bool
+
+	// GetError status of the task.
+	//
+	// If there is no error, GetError returns nil. Otherwise, a non-nil error is
+	// returned.
+	GetError() error
+
+	// Error records that the task has failed with the given error.
+	//
+	// The error must not be nil, calling Error with a nil error is a no-op.
+	// Once an error has been set, it cannot be cleared as the task is marked as
+	// complete.
+	Error(err error)
 
 	// GetStartedAt returns the time that the task was started at.
 	GetStartedAt() time.Time
@@ -125,21 +169,21 @@ type Task interface {
 	// IsIndeterminate, this is true if there are any completed steps.
 	IsCompleted() bool
 
-	// CompletedStep increments the number of steps that have already been
+	// CompleteStep increments the number of steps that have already been
 	// completed as part of this task.
 	//
 	// If the task IsDone, this function is a no-op.
-	CompletedStep()
+	CompleteStep()
 
-	// GetCompletedSteps returns the number of steps that have already been
+	// GetCompleteSteps returns the number of steps that have already been
 	// completed as part of this task.
-	GetCompletedSteps() uint64
+	GetCompleteSteps() uint64
 
-	// CompletedSteps sets the number of steps that have already been completed
+	// CompleteSteps sets the number of steps that have already been completed
 	// as part of this task.
 	//
 	// If the task IsDone, this function is a no-op.
-	CompletedSteps(completedSteps uint64)
+	CompleteSteps(completeSteps uint64)
 
 	// GetTotalSteps returns the number of steps that must be completed as part
 	// of this task.
@@ -159,18 +203,40 @@ type task struct {
 	name           string
 	caption        string
 	category       string
+	unit           formatting.Unit
 	startTime      time.Time
 	endTime        time.Time
 	stepsCompleted *atomic.Uint64
 	stepsTotal     *atomic.Uint64
+	err            error
 
 	timeOfLastRecord time.Time
 	timePerStep      []time.Duration
 }
 
-func (t *task) GetName() string           { return t.name }
-func (t *task) GetCaption() string        { return t.caption }
-func (t *task) GetCategory() string       { return t.category }
+func (t *task) GetName() string             { return t.name }
+func (t *task) SetName(name string)         { t.name = name }
+func (t *task) GetCaption() string          { return t.caption }
+func (t *task) SetCaption(caption string)   { t.caption = caption }
+func (t *task) GetCategory() string         { return t.category }
+func (t *task) SetCategory(category string) { t.category = category }
+func (t *task) GetUnit() formatting.Unit    { return t.unit }
+func (t *task) IsError() bool               { return t.err != nil }
+func (t *task) GetError() error             { return t.err }
+
+func (t *task) Error(err error) {
+	if t.IsCompleted() {
+		return
+	}
+
+	if err == nil {
+		return
+	}
+
+	t.endTime = time.Now()
+	t.err = err
+}
+
 func (t *task) GetStartedAt() time.Time   { return t.startTime }
 func (t *task) GetCompletedAt() time.Time { return t.endTime }
 
@@ -212,12 +278,12 @@ func (t *task) GetEstimatedCompletion() (time.Duration, bool) {
 		return 0, false
 	}
 
-	remainingSteps := t.GetTotalSteps() - t.GetCompletedSteps()
+	remainingSteps := t.GetTotalSteps() - t.GetCompleteSteps()
 	return time.Duration(remainingSteps) * avgTimePerStep, true
 }
 
 func (t *task) IsIndeterminate() bool { return t.stepsTotal.Load() == 0 }
-func (t *task) IsCompleted() bool     { return !t.endTime.IsZero() }
+func (t *task) IsCompleted() bool     { return t.err != nil || !t.endTime.IsZero() }
 
 func (t *task) recordTimePerSteps(n uint64) {
 	var d time.Duration
@@ -260,7 +326,7 @@ func (t *task) checkCompleted() {
 	}
 }
 
-func (t *task) CompletedStep() {
+func (t *task) CompleteStep() {
 	if t.IsCompleted() {
 		return
 	}
@@ -271,16 +337,16 @@ func (t *task) CompletedStep() {
 	t.notify()
 }
 
-func (t *task) GetCompletedSteps() uint64 {
+func (t *task) GetCompleteSteps() uint64 {
 	return t.stepsCompleted.Load()
 }
 
-func (t *task) CompletedSteps(completedSteps uint64) {
+func (t *task) CompleteSteps(completeSteps uint64) {
 	if t.IsCompleted() {
 		return
 	}
 
-	previouslyCompletedSteps := t.stepsCompleted.Swap(completedSteps)
+	previouslyCompletedSteps := t.stepsCompleted.Swap(completeSteps)
 	t.recordTimePerSteps(previouslyCompletedSteps)
 	t.checkCompleted()
 	t.notify()

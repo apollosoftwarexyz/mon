@@ -15,6 +15,12 @@ import (
 var (
 	boldStyle     = lipgloss.NewStyle().Bold(true)
 	completeStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("34"))
+	errorStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("160"))
+)
+
+const (
+	completeIcon = "✓"
+	errorIcon    = "✖"
 )
 
 type notifyMsg struct {
@@ -92,8 +98,14 @@ func (m *model) View() string {
 		inProgressTasks := make([]Task, 0)
 
 		for _, t := range m.tasks {
-			if t.IsCompleted() && time.Since(t.GetCompletedAt()).Seconds() > 2 {
-				continue
+			if t.IsError() {
+				if time.Since(t.GetCompletedAt()).Seconds() > 15 {
+					continue
+				}
+			} else if t.IsCompleted() {
+				if time.Since(t.GetCompletedAt()).Seconds() > 2 {
+					continue
+				}
 			}
 
 			inProgressTasks = append(inProgressTasks, t)
@@ -124,12 +136,15 @@ func getLongestNameLength(tasks []Task) int {
 	return l
 }
 
+func renderProgress(t Task) string {
+	return t.GetUnit().RenderProgress(t.GetCompleteSteps(), t.GetTotalSteps())
+}
+
 func getLongestProgressLength(allTasks []Task) int {
 	l := 0
 
 	for _, t := range allTasks {
-		formattedLen := len(fmt.Sprintf("%d/%d", t.GetCompletedSteps(), t.GetTotalSteps()))
-		if formattedLen > l {
+		if formattedLen := len(renderProgress(t)); formattedLen > l {
 			l = formattedLen
 		}
 	}
@@ -142,7 +157,11 @@ func (m *model) renderTask(t Task, allTasks []Task, spinner string) string {
 
 	icon := spinner
 	if t.IsCompleted() {
-		icon = completeStyle.Render("✔")
+		if t.IsError() {
+			icon = errorIcon
+		} else {
+			icon = completeStyle.Render(completeIcon)
+		}
 	}
 	s.WriteString(icon)
 	s.WriteRune(' ')
@@ -164,9 +183,14 @@ func (m *model) renderTask(t Task, allTasks []Task, spinner string) string {
 	s.WriteString(fmt.Sprintf("| %s", formatDuration(t.GetElapsed())))
 	s.WriteString(" ")
 
+	if t.IsError() {
+		s.WriteString("| ")
+		s.WriteString(t.GetError().Error())
+	}
+
 	if !t.IsIndeterminate() {
 		s.WriteString("| ")
-		s.WriteString(fmt.Sprintf("%"+strconv.Itoa(getLongestProgressLength(allTasks))+"s", fmt.Sprintf("%d/%d", t.GetCompletedSteps(), t.GetTotalSteps())))
+		s.WriteString(fmt.Sprintf("%"+strconv.Itoa(getLongestProgressLength(allTasks))+"s", renderProgress(t)))
 		s.WriteString(" ")
 	}
 
@@ -180,8 +204,12 @@ func (m *model) renderTask(t Task, allTasks []Task, spinner string) string {
 		averageTimePerStep, hasAverageTimePerStep := t.GetAverageTimePerStep()
 		if hasAverageTimePerStep {
 			s.WriteRune(' ')
-			s.WriteString(fmt.Sprintf("%3.0f steps/s", 1/averageTimePerStep.Seconds()))
+			s.WriteString(fmt.Sprintf("%s/s", t.GetUnit().Render(uint64(1/averageTimePerStep.Seconds()))))
 		}
+	}
+
+	if t.IsError() {
+		return errorStyle.Render(s.String()) + "\n"
 	}
 
 	s.WriteRune('\n')
@@ -207,7 +235,7 @@ func formatDuration(d time.Duration) string {
 	if seconds := time.Duration(d.Seconds()); seconds >= 10 {
 		s.WriteString(fmt.Sprintf("%02d", seconds%60))
 	} else {
-		s.WriteString(fmt.Sprintf("%d", seconds%60))
+		s.WriteString(fmt.Sprintf("% d", seconds%60))
 	}
 
 	if d.Seconds() < 60 {

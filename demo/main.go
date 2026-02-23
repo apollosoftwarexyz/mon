@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/apollosoftwarexyz/mon"
+	"github.com/apollosoftwarexyz/mon/formatting"
 )
 
 func main() {
@@ -25,14 +27,24 @@ func main() {
 	indeterminateTask(&wg, m, 10*time.Second)
 	indeterminateTask(&wg, m, 5*time.Second)
 	indeterminateTask(&wg, m, 200*time.Millisecond)
-	countToN(&wg, m, 20000)
-	countToN(&wg, m, 5000)
-	countToN(&wg, m, 2000)
-	countToN(&wg, m, 2000)
-	countToN(&wg, m, 500)
-	countToN(&wg, m, 1000)
-	countToN(&wg, m, 300)
-	countToN(&wg, m, 200)
+	errorTask(&wg, m, 5*time.Second)
+
+	fakeCopyBytes(&wg, m, 20000)
+	fakeCopyBytes(&wg, m, 5000)
+	fakeCopyBytes(&wg, m, 2000)
+	fakeCopyBytes(&wg, m, 2000)
+	fakeCopyBytes(&wg, m, 500)
+	fakeCopyBytes(&wg, m, 1000)
+	fakeCopyBytes(&wg, m, 300)
+	fakeCopyBytes(&wg, m, 200)
+
+	time.Sleep(3 * time.Second)
+	fakeCopyBytes(&wg, m, 2000)
+	fakeCopyBytes(&wg, m, 15000)
+
+	time.Sleep(5 * time.Second)
+	fakeCopyBytes(&wg, m, 2000)
+
 	wg.Wait()
 
 }
@@ -43,20 +55,35 @@ func indeterminateTask(wg *sync.WaitGroup, m mon.M, duration time.Duration) {
 
 	wg.Go(func() {
 		time.Sleep(duration)
-		task.CompletedStep()
+		task.CompleteStep()
 	})
 
 }
 
-func countToN(wg *sync.WaitGroup, m mon.M, n uint64) {
+func fakeCopyBytes(wg *sync.WaitGroup, m mon.M, n uint64) {
 
-	task := m.AddTask().Name(fmt.Sprintf("counting to %d", n)).TotalSteps(n).Apply()
+	task := m.AddTask().
+		Name(fmt.Sprintf("copying %d bytes", n)).
+		Unit(&formatting.BytesUnit{}).
+		TotalSteps(n).
+		Apply()
 
 	wg.Go(func() {
 		for range n {
-			task.CompletedStep()
+			task.CompleteStep()
 			time.Sleep(time.Millisecond)
 		}
+	})
+
+}
+
+func errorTask(wg *sync.WaitGroup, m mon.M, duration time.Duration) {
+
+	task := m.AddTask().Name("risky task").Apply()
+
+	wg.Go(func() {
+		time.Sleep(duration)
+		task.Error(errors.New("this is a simulated error"))
 	})
 
 }
