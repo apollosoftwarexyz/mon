@@ -1,7 +1,7 @@
 # See https://github.com/charmbracelet/vhs
 
 # Set the output location.
-Output demo.gif
+Output demo/demo.gif
 
 # Configure the terminal.
 Set Shell zsh
