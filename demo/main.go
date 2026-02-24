@@ -18,47 +18,49 @@ func main() {
 
 	// Show the monitor. The returned cancel method allows the UI to be cleaned
 	// up automatically when the work is done.
-	cancel := m.Show(context.Background())
-	defer cancel()
+	ctx, cancel := m.Show(context.WithCancelCause(context.Background()))
+	defer cancel(nil)
 
-	// Do the work...
+	// Do some "work"...
 	var wg sync.WaitGroup
 
-	indeterminateTask(&wg, m, 10*time.Second)
-	indeterminateTask(&wg, m, 5*time.Second)
-	indeterminateTask(&wg, m, 200*time.Millisecond)
-	errorTask(&wg, m, 5*time.Second)
+	indeterminateTask(&wg, ctx, m, 10*time.Second)
+	indeterminateTask(&wg, ctx, m, 5*time.Second)
+	indeterminateTask(&wg, ctx, m, 200*time.Millisecond)
 
-	fakeCopyBytes(&wg, m, 5000)
-	fakeCopyBytes(&wg, m, 2000)
-	fakeCopyBytes(&wg, m, 2000)
-	fakeCopyBytes(&wg, m, 500)
-	fakeCopyBytes(&wg, m, 1000)
-	fakeCopyBytes(&wg, m, 300)
-	fakeCopyBytes(&wg, m, 200)
+	errorTask(&wg, ctx, m, 5*time.Second)
 
-	time.Sleep(3 * time.Second)
-	fakeCopyBytes(&wg, m, 2000)
+	fakeCopyBytes(&wg, ctx, m, 5000)
+	fakeCopyBytes(&wg, ctx, m, 2000)
+	fakeCopyBytes(&wg, ctx, m, 2000)
+	fakeCopyBytes(&wg, ctx, m, 500)
+	fakeCopyBytes(&wg, ctx, m, 1000)
+	fakeCopyBytes(&wg, ctx, m, 300)
+	fakeCopyBytes(&wg, ctx, m, 200)
 
-	time.Sleep(5 * time.Second)
-	fakeCopyBytes(&wg, m, 2000)
+	interruptableSleep(ctx, 3*time.Second)
+	fakeCopyBytes(&wg, ctx, m, 2000)
 
+	interruptableSleep(ctx, 5*time.Second)
+	fakeCopyBytes(&wg, ctx, m, 2000)
+
+	interruptableSleep(ctx, 4*time.Second)
 	wg.Wait()
 
 }
 
-func indeterminateTask(wg *sync.WaitGroup, m mon.M, duration time.Duration) {
+func indeterminateTask(wg *sync.WaitGroup, ctx context.Context, m mon.M, duration time.Duration) {
 
 	task := m.AddTask().Name("mysterious task").Apply()
 
 	wg.Go(func() {
-		time.Sleep(duration)
+		interruptableSleep(ctx, duration)
 		task.CompleteStep()
 	})
 
 }
 
-func fakeCopyBytes(wg *sync.WaitGroup, m mon.M, n uint64) {
+func fakeCopyBytes(wg *sync.WaitGroup, ctx context.Context, m mon.M, n uint64) {
 
 	task := m.AddTask().
 		Name(fmt.Sprintf("copying %d bytes", n)).
@@ -69,19 +71,26 @@ func fakeCopyBytes(wg *sync.WaitGroup, m mon.M, n uint64) {
 	wg.Go(func() {
 		for range n {
 			task.CompleteStep()
-			time.Sleep(time.Millisecond)
+			interruptableSleep(ctx, time.Millisecond)
 		}
 	})
 
 }
 
-func errorTask(wg *sync.WaitGroup, m mon.M, duration time.Duration) {
+func errorTask(wg *sync.WaitGroup, ctx context.Context, m mon.M, duration time.Duration) {
 
 	task := m.AddTask().Name("risky task").Apply()
 
 	wg.Go(func() {
-		time.Sleep(duration)
+		interruptableSleep(ctx, duration)
 		task.Error(errors.New("this is a simulated error"))
 	})
 
+}
+
+func interruptableSleep(ctx context.Context, duration time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(duration):
+	}
 }

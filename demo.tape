@@ -10,9 +10,9 @@ Set Width 2000
 Set Height 800
 
 # Run the demo.
-Type "go run ./demo/main.go"
+Type "go run ./demo"
 Enter
 
 # Wait for the demo to finish.
-Sleep 10.5s
+Sleep 12.5s
 

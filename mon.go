@@ -8,10 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// CancelFunc automatically cancels the [context.Context] that was passed to
-// [M.Show] and waits for the monitor to be cleaned up.
-type CancelFunc func()
-
 // M is a CLI monitor for various [Task] statuses.
 type M interface {
 	// AddTask creates a [TaskBuilder] that can be used to define and add a new
@@ -22,9 +18,9 @@ type M interface {
 	//
 	// The [CancelFunc] should be deferred immediately after Show is called:
 	//
-	//	cancel := m.Show(context.Background())
+	//	ctx, cancel := m.Show(context.WithCancelCause(context.Background()))
 	//	defer cancel()
-	Show(ctx context.Context) CancelFunc
+	Show(ctx context.Context, cancel context.CancelCauseFunc) (context.Context, context.CancelCauseFunc)
 }
 
 // New monitor.
@@ -43,21 +39,22 @@ func (m *model) AddTask() TaskBuilder {
 	return &taskBuilder{m: m}
 }
 
-func (m *model) Show(ctx context.Context) CancelFunc {
+func (m *model) Show(ctx context.Context, cancel context.CancelCauseFunc) (context.Context, context.CancelCauseFunc) {
 	m.prog = tea.NewProgram(m, tea.WithContext(ctx))
-	exited := make(chan error)
+	m.exited = make(chan error)
 
 	go func() {
 		_, err := m.prog.Run()
-		exited <- err
+		cancel(err)
+		m.exited <- err
 	}()
 
-	return func() {
+	return ctx, func(cause error) {
 		m.prog.Send(doneMsg{})
 
 		// Wait for the bubbletea application to quit.
 		select {
-		case <-exited:
+		case <-m.exited:
 		}
 	}
 }

@@ -9,19 +9,13 @@ import (
 // DurationUnit renders a [uint64] number of nanoseconds (the base unit of
 // [time.Duration]) as a human-readable duration.
 //
-// This unit also exposes the [DurationUnit.RenderDuration] and
-// [DurationUnit.RenderDurationProgress] methods that accept [time.Duration]
-// instead of [uint64] for where those more specific cases may be helpful.
-//
-// See [Duration].
+// This unit also exposes the [DurationUnit.RenderDurationProgress] method that
+// accepts [time.Duration] instead of [uint64]. This allows rendering negative
+// progress if required. For the individual unit version, use [Duration].
 type DurationUnit struct{}
 
 func (*DurationUnit) Render(value uint64) string {
 	return Duration(time.Duration(value))
-}
-
-func (*DurationUnit) RenderDuration(d time.Duration) string {
-	return Duration(d)
 }
 
 func (*DurationUnit) RenderProgress(current uint64, total uint64) string {
@@ -41,11 +35,11 @@ func Duration(d time.Duration) string {
 	// value as absolute.
 	if d < 0 {
 		s.WriteRune('-')
+		d = d.Abs()
 	}
-	d = d.Abs()
 
 	if hours := time.Duration(d.Hours()); hours > 0 {
-		s.WriteString(fmt.Sprintf("%02d:", hours))
+		s.WriteString(fmt.Sprintf("%d:", hours))
 	}
 
 	if minutes := time.Duration(d.Minutes()); minutes > 0 {
@@ -60,7 +54,7 @@ func Duration(d time.Duration) string {
 	if seconds := time.Duration(d.Seconds()); seconds >= 10 {
 		s.WriteString(fmt.Sprintf("%02d", seconds%60))
 	} else {
-		s.WriteString(fmt.Sprintf("% d", seconds%60))
+		s.WriteString(fmt.Sprintf("%d", seconds%60))
 	}
 
 	if d.Seconds() < 60 {

@@ -40,8 +40,8 @@ m := mon.New("Please wait")
 
 // Show the monitor. The returned cancel method allows the UI to be cleaned
 // up programmatically or automatically (with defer) when the work is done.
-cancel := m.Show(context.Background())
-defer cancel()
+ctx, cancel := m.Show(context.WithCancelCause(context.Background()))
+defer cancel(nil)
 ```
 
 Finally, track some tasks! You can get a new task builder by calling `AddTask`

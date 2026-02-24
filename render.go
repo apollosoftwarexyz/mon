@@ -24,24 +24,39 @@ const (
 	errorIcon    = "✖"
 )
 
-type notifyMsg struct {
-	tag int
+type tickMsg struct {
+	refreshRate time.Duration
+	tag         int
 }
+
+type notifyMsg struct{}
 
 type doneMsg struct{}
 
 type model struct {
 	prog         *tea.Program
+	exited       chan error
 	spinnerAnim  *animations.A
 	ellipsisAnim *animations.A
-	caption      string
-	start        time.Time
-	done         bool
+
+	caption string
+	start   time.Time
+	done    bool
 
 	notifyMutex sync.Mutex
+	tag         int
 
 	tasksMutex sync.RWMutex
 	tasks      []Task
+}
+
+func (m *model) tick(refreshRate time.Duration, tag int) tea.Cmd {
+	return tea.Tick(refreshRate, func(t time.Time) tea.Msg {
+		return tickMsg{
+			refreshRate: refreshRate,
+			tag:         tag,
+		}
+	})
 }
 
 func (m *model) notify() {
@@ -60,11 +75,21 @@ func (m *model) addTask(task Task) {
 }
 
 func (m *model) Init() tea.Cmd {
-	return nil
+	// ensure we refresh at least once every 50ms.
+	return m.tick(50*time.Millisecond, 0)
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tickMsg:
+		// discard the message if the tag does not match the model's tag (this
+		// de-bounces conflicting tick messages).
+		if m.tag > 0 && m.tag != msg.tag {
+			return m, nil
+		}
+
+		m.tag++
+		return m, m.tick(msg.refreshRate, m.tag)
 	case notifyMsg:
 		return m, nil
 	case doneMsg:
@@ -181,7 +206,7 @@ func (m *model) renderTask(t Task, allTasks []Task, spinner string) string {
 		s.WriteRune(' ')
 	}
 
-	s.WriteString(fmt.Sprintf("| %s", formatting.Duration(t.GetElapsed())))
+	s.WriteString(fmt.Sprintf("| %5s", formatting.Duration(t.GetElapsed())))
 	s.WriteString(" ")
 
 	if t.IsError() {
