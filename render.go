@@ -34,8 +34,10 @@ type notifyMsg struct{}
 type doneMsg struct{}
 
 type model struct {
-	prog         *tea.Program
-	exited       chan error
+	prog              *tea.Program
+	exited            chan error
+	blockCancellation bool
+
 	spinnerAnim  *animations.A
 	ellipsisAnim *animations.A
 
@@ -98,6 +100,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			if m.blockCancellation {
+				return m, nil
+			}
+
 			m.done = true
 			return m, tea.Quit
 		}
