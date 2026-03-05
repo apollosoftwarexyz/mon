@@ -14,6 +14,11 @@ type M interface {
 	// task to the monitor.
 	AddTask() TaskBuilder
 
+	// IsCancellationBlocked returns true if cancellation has been blocked with
+	// [M.BlockCancellation] (or if it has been unblocked with
+	// [M.AllowCancellation]).
+	IsCancellationBlocked() bool
+
 	// AllowCancellation permits the user to press Ctrl+C to cancel the context
 	// used by the monitor.
 	//
@@ -33,6 +38,12 @@ type M interface {
 	// The same monitor instance is returned to allow for a fluent API.
 	BlockCancellation() M
 
+	// GetCaption of the monitor.
+	GetCaption() string
+
+	// SetCaption of the monitor.
+	SetCaption(caption string)
+
 	// Show the monitor in the CLI.
 	//
 	// The [CancelFunc] should be deferred immediately after Show is called:
@@ -51,11 +62,16 @@ func New(caption string) M {
 		ellipsisAnim: animations.Ellipsis(),
 		start:        time.Now(),
 		caption:      caption,
+		exited:       make(chan error),
 	}
 }
 
 func (m *model) AddTask() TaskBuilder {
 	return &taskBuilder{m: m}
+}
+
+func (m *model) IsCancellationBlocked() bool {
+	return m.blockCancellation
 }
 
 func (m *model) AllowCancellation() M {
@@ -68,18 +84,27 @@ func (m *model) BlockCancellation() M {
 	return m
 }
 
+func (m *model) GetCaption() string {
+	return m.caption
+}
+
+func (m *model) SetCaption(caption string) {
+	m.caption = caption
+	m.notify()
+}
+
 func (m *model) Show(ctx context.Context, cancel context.CancelCauseFunc) (context.Context, context.CancelCauseFunc) {
 	m.prog = tea.NewProgram(m, tea.WithContext(ctx))
-	m.exited = make(chan error)
 
 	go func() {
 		_, err := m.prog.Run()
 		cancel(err)
 		m.exited <- err
+		close(m.exited)
 	}()
 
 	return ctx, func(cause error) {
-		m.prog.Send(doneMsg{})
+		m.notifyDone()
 
 		// Wait for the bubbletea application to quit.
 		select {

@@ -62,12 +62,24 @@ func (m *model) tick(refreshRate time.Duration, tag int) tea.Cmd {
 }
 
 func (m *model) notify() {
+	if m.prog == nil {
+		return
+	}
+
 	// Use a mutex around the notifyMsg to ensure we do not queue simultaneous
 	// notify messages (we should drop them instead).
 	if m.notifyMutex.TryLock() {
 		defer m.notifyMutex.Unlock()
 		m.prog.Send(notifyMsg{})
 	}
+}
+
+func (m *model) notifyDone() {
+	if m.prog == nil {
+		return
+	}
+
+	m.prog.Send(doneMsg{})
 }
 
 func (m *model) addTask(task Task) {

@@ -140,7 +140,7 @@ type Task interface {
 	GetElapsed() time.Duration
 
 	// GetProgress expressed as a percentage. For tasks where IsIndeterminate is
-	// true, this is always zero.
+	// true, this is always zero or 100%.
 	GetProgress() float64
 
 	// GetAverageTimePerStep computes a mean average of time per step using up
@@ -172,6 +172,8 @@ type Task interface {
 	// CompleteStep increments the number of steps that have already been
 	// completed as part of this task.
 	//
+	// This is a convenience function for [CompleteSteps] with a value of one.
+	//
 	// If the task IsDone, this function is a no-op.
 	CompleteStep()
 
@@ -179,11 +181,27 @@ type Task interface {
 	// completed as part of this task.
 	GetCompleteSteps() uint64
 
-	// CompleteSteps sets the number of steps that have already been completed
-	// as part of this task.
+	// CompleteSteps adds n to the number of steps that have already been
+	// completed as part of this task. The value is clamped at the number of
+	// total steps for the task.
+	//
+	// If n is less than one, this function is a no-op.
 	//
 	// If the task IsDone, this function is a no-op.
-	CompleteSteps(completeSteps uint64)
+	CompleteSteps(n uint64)
+
+	// SetCompletedSteps sets the number of steps that have already been
+	// completed as part of this task. The value is clamped to the number
+	// of total steps for the task.
+	//
+	// If the given number of complete steps is less than or equal to the
+	// current number of complete steps, this function is a no-op. (In other
+	// words, it is not possible to 'un-complete' steps).
+	//
+	// Given the above, if completeSteps is zero, this function is a no-op.
+	//
+	// If the task IsDone, this function is a no-op.
+	SetCompletedSteps(completeSteps uint64)
 
 	// GetTotalSteps returns the number of steps that must be completed as part
 	// of this task.
@@ -249,12 +267,17 @@ func (t *task) GetElapsed() time.Duration {
 }
 
 func (t *task) GetProgress() float64 {
+	completed := t.stepsCompleted.Load()
 	total := t.stepsTotal.Load()
+
 	if total == 0 {
+		if completed > 0 {
+			return 1
+		}
+
 		return 0
 	}
 
-	completed := t.stepsCompleted.Load()
 	return float64(completed) / float64(total)
 }
 
@@ -327,14 +350,7 @@ func (t *task) checkCompleted() {
 }
 
 func (t *task) CompleteStep() {
-	if t.IsCompleted() {
-		return
-	}
-
-	t.stepsCompleted.Add(1)
-	t.recordTimePerSteps(1)
-	t.checkCompleted()
-	t.notify()
+	t.CompleteSteps(1)
 }
 
 func (t *task) GetCompleteSteps() uint64 {
@@ -346,8 +362,45 @@ func (t *task) CompleteSteps(completeSteps uint64) {
 		return
 	}
 
-	previouslyCompletedSteps := t.stepsCompleted.Swap(completeSteps)
-	t.recordTimePerSteps(previouslyCompletedSteps)
+	if completeSteps < 1 {
+		return
+	}
+
+	completedSteps := t.stepsCompleted.Load()
+	if totalSteps := t.stepsTotal.Load(); totalSteps > 0 && completedSteps+completeSteps >= totalSteps {
+		t.stepsCompleted.Store(totalSteps)
+	} else {
+		t.stepsCompleted.Add(completeSteps)
+	}
+
+	t.recordTimePerSteps(completeSteps)
+	t.checkCompleted()
+	t.notify()
+}
+
+func (t *task) SetCompletedSteps(completeSteps uint64) {
+	if t.IsCompleted() {
+		return
+	}
+
+	if completeSteps == 0 {
+		return
+	}
+
+	// If the number of steps already completed is greater than or equal to the
+	// new number of complete steps, do nothing.
+	if completedSteps := t.stepsCompleted.Load(); completedSteps >= completeSteps {
+		return
+	}
+
+	// If the total number of steps is less than the given number of complete
+	// steps, clamp the value.
+	if totalSteps := t.stepsTotal.Load(); totalSteps < completeSteps {
+		completeSteps = totalSteps
+	}
+
+	previouslyCompleted := t.stepsCompleted.Swap(completeSteps)
+	t.recordTimePerSteps(completeSteps - previouslyCompleted)
 	t.checkCompleted()
 	t.notify()
 }

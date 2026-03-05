@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Run Go tests and produce a coverage report.
+# Error if the total coverage is less than 100.0%.
+
+# Resolve the directory of the script
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+COVERAGE_OUTPUT="$DIR/cover.out"
+COVERAGE_REPORT="$DIR/cover.report.txt"
+
+# Remove files from previous runs.
+[[ -f "$COVERAGE_OUTPUT" ]] && rm "$COVERAGE_OUTPUT"
+[[ -f "$COVERAGE_REPORT" ]] && rm "$COVERAGE_REPORT"
+
+set -eux
+
+go test ./... -coverprofile="$COVERAGE_OUTPUT"
+go tool cover -func="$COVERAGE_OUTPUT" | tee "$COVERAGE_REPORT"
+
+TOTAL_COVERAGE=$(awk '{ if ($1 == "total:") print $3 }' < "$COVERAGE_REPORT")
+
+{ set +x; } 2>/dev/null
+
+if [[ $TOTAL_COVERAGE != "100.0%" ]]; then
+  echo "Insufficient coverage. Expected 100.0%, got $TOTAL_COVERAGE"
+#  TODO: make this a failure condition
+#  exit 1
+fi

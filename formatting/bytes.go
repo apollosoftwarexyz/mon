@@ -2,6 +2,7 @@ package formatting
 
 import (
 	"fmt"
+	"math"
 )
 
 // BytesUnit renders discrete numbers of bytes using [Bytes].
@@ -34,11 +35,6 @@ func Bytes(value uint64) string {
 	units := []string{"bytes", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
 	unitIdx := ilog2(value) / 10
 
-	// Clamp to the maximum defined unit.
-	if unitIdx >= uint64(len(units)) {
-		unitIdx = uint64(len(units)) - 1
-	}
-
 	// If the index is 0, just return the value as-is with the first suffix.
 	if unitIdx == 0 {
 		return fmt.Sprintf("%d %s", value, units[0])
@@ -56,7 +52,11 @@ func Bytes(value uint64) string {
 	decimalRemainder := float64(remainder) / float64(ipow(1024, unitIdx)) // compute the decimal remainder
 	decimalRemainderExtra := decimalRemainder * 10000                     // multiply decimal remainder to 3sf + 1 extra precision.
 	decimalRemainder = float64(uint64((decimalRemainderExtra + 5) / 10))  // round half-up
-	
+
+	// If we're here, the value didn't round evenly, so ensure we account for
+	// lost precision.
+	decimalRemainder = math.Min(decimalRemainder, 999)
+
 	return fmt.Sprintf("%0.3f %s", unitValue+(decimalRemainder/1000), units[unitIdx])
 }
 

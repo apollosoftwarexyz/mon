@@ -20,4 +20,12 @@ jobs:
         run: go build -v ./...
 
       - name: Test
-        run: go test -v ./...
+        run: bash ./test
+
+      - name: Publish coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            cover.out
+            cover.report.txt
