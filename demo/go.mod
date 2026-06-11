@@ -1,10 +1,8 @@
 module demo
 
-go 1.24.2
+go 1.25.0
 
-require (
-	golang.org/x/sync v0.19.0
-)
+require github.com/apollosoftwarexyz/mon v0.3.0
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
